@@ -5,11 +5,7 @@ from telegram import Update
 from telegram.ext import (
     Application,
     CommandHandler,
-    MessageHandler,
-    CallbackQueryHandler,
-    ConversationHandler,
     ContextTypes,
-    filters,
 )
 
 # Logging configuration
@@ -19,8 +15,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Token Environment Variable irraa dubbisuu (ykn kallattiidhaan bakka buusuu)
-TOKEN = os.environ.get("BOT_TOKEN", "8677969421:AAFyY_cNRkx-3X3N5TxI7nilY342rh9DtHc")
+# Token Environment Variable irraa qofa dubbisuu (Hardcoded token dhiisi)
+TOKEN = os.environ.get("BOT_TOKEN")
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Command /start nagaan dhaama."""
@@ -35,6 +31,10 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 def main() -> None:
     """Bot sana qindoomina eegaluu."""
+    if not TOKEN:
+        logger.error("BOT_TOKEN Environment Variable keessatti hin argamne!")
+        return
+
     logger.info("Ararsa Technology Solutions Bot Starting...")
     
     # Application uumuu
@@ -44,11 +44,10 @@ def main() -> None:
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
 
-    # Polling eegaluu
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+    # Polling eegaluu (drop_pending_updates=True yoo uumamu Conflict ni ittisa)
+    application.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
 
 if __name__ == '__main__':
-    # Python 3.12+ fi Render irratti RuntimeError akka hin uumamneef
     try:
         asyncio.get_event_loop()
     except RuntimeError:
