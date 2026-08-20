@@ -6,7 +6,7 @@ from telegram.ext import (
     CommandHandler,
     MessageHandler,
     ContextTypes,
-    ConversationLogic,
+    ConversationHandler,
     filters,
 )
 
@@ -225,7 +225,7 @@ def main():
 
     app = Application.builder().token(TOKEN).build()
 
-    conv_handler = ConversationLogic(
+    conv_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
         states={
             LANGUAGE: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_language)],
