@@ -1,276 +1,265 @@
 import os
-import asyncio
 import logging
-from datetime import datetime, timezone
+from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    MessageHandler,
+    ContextTypes,
+    ConversationLogic,
+    filters,
+)
 
-from fastapi import FastAPI, Request
-from aiogram import Bot, Dispatcher, Router, F
-from aiogram.enums import ParseMode
-from aiogram.client.default import DefaultBotProperties
-from aiogram.filters import CommandStart, Command
-from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
-from aiogram.utils.keyboard import InlineKeyboardBuilder
+# Logging Setup
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
+)
+logger = logging.getLogger(__name__)
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("technology_solution_bot")
-
-BOT_TOKEN = os.getenv("BOT_TOKEN", "")
+# Config
+TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
-WEBHOOK_URL = os.getenv("WEBHOOK_URL", "").rstrip("/")
-WEBHOOK_PATH = "/telegram/webhook"
+WEBHOOK_URL = os.getenv("WEBHOOK_URL", "")
 
-if not BOT_TOKEN:
-    raise RuntimeError("BOT_TOKEN environment variable is required")
+# Conversation States
+LANGUAGE, MAIN_MENU, REQ_NAME, REQ_PHONE, REQ_SERVICE, REQ_LOCATION, REQ_DESC, REQ_PHOTO = range(8)
 
-bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
-dp = Dispatcher()
-router = Router()
-dp.include_router(router)
-
-app = FastAPI(title="Technology Solution Telegram Bot")
-
-SERVICES = {
-    "computer": ("💻 Computer Maintenance",
-                 "Windows installation, software setup, troubleshooting, cleaning, upgrades and performance optimization."),
-    "printer": ("🖨 Printer Service",
-                "Printer installation, driver configuration, network printing, troubleshooting and maintenance."),
-    "network": ("🌐 Network Solutions",
-                "LAN/Wi-Fi installation, router and switch configuration, IP/DHCP/NAT setup and network troubleshooting."),
-    "cctv": ("📹 CCTV & Security",
-             "CCTV planning, installation, configuration and network access."),
-    "server": ("🖥 Server & IT Support",
-               "Basic server setup, backup, user support and IT infrastructure assistance."),
-    "vpn": ("🔐 VPN Solutions",
-            "Business and secure remote-access VPN configuration and troubleshooting."),
+# Texts Multi-Language
+TEXTS = {
+    "OM": {
+        "welcome": "🚀 Simatee dhuftan Ararsa Technology Solutions!\nMootummaa fi Dhaabbilee dhuunfaaf tajaajila teeknoolojii saafisaa fi qulqullina qabu ni kennina.",
+        "lang_select": "Moochaa Afaan keessanii filadhaa:",
+        "main_menu": "🏠 **Menu Guddaa**\nFiltannoowwan asii gadii irraa dooraddaa:",
+        "btn_services": "💻 Tajaajiloota",
+        "btn_products": "🛒 Meeshaalee",
+        "btn_request": "📋 Tajaajila Gaafachuuf",
+        "btn_quote": "💰 Gatii Gaafachuuf",
+        "btn_contact": "📞 Nu Quunnamaa",
+        "btn_location": "📍 Bakka Nu Argamtan",
+        "btn_lang": "🌍 Afaan Jijjiiruuf",
+        "services_list": "💻 **Tajaajiloota Nu Kenninu:**\n\n1. 🖨 Computer & Printer Maintenance\n2. 🌐 Network & Wi-Fi Setup\n3. 📹 CCTV Camera Installation\n4. 🔐 VPN & Security Solutions\n5. 💻 Software & System Setup",
+        "products_list": "🛒 **Meeshaalee Gurguraa:**\n\n• Kompitiitara (Laptops & Desktops)\n• Piriinteroota & Toners\n• Network Routers & Switches\n• CCTV Cameras & DVRs\n\nDetail qabuuf nu quunnamaa!",
+        "contact_info": "📞 **Ararsa Technology Solutions**\n\n📱 Bilbila: 0912688641\n📧 Email: ararsa1221@gmail.com\n📍 Teessoo: Dodola, Ethiopia",
+        "location_info": "📍 **Teessoo Keenya:**\nArarsa Technology Solutions\nDodola, Oromia, Ethiopia.",
+        "req_start": "📋 **Tajaajila Gaafachuuf Formii kana guutaa.**\n\nMaqaa keessan guutuu galchaa:",
+        "req_phone": "Bilbila keessan galchaa (fkn: 0912345678):",
+        "req_service": "Tajaajila maaltu isin barbaachisa?",
+        "req_location": "Teessoo keessan (Bakka jirtan) galchaa:",
+        "req_desc": "Rakkoo ykn waan isin barbaachisu bal'inaan ibsaa:",
+        "req_photo": "Fakkii (Photo) rakkoo sanaa yoo qabaattan ergaa (Yoo hin qabne 'Skip' tuqaa):",
+        "req_complete": "✅ Gaaffiin keessan sirriitti ergameera! Haala saafisaan isin quunnamna.",
+        "skip": "Skip ➡️"
+    },
+    "AM": {
+        "welcome": "🚀 ወደ Ararsa Technology Solutions እንኳን ደህና መጡ!\nፈጣን እና አስተማማኝ የቴክኖሎጂ አገልግሎቶች እንሰጣለን።",
+        "lang_select": "እባክዎን ቋንቋ ይምረጡ:",
+        "main_menu": "🏠 **ዋና ማውጫ**\nከታች ከተዘረዘሩት ይምረጡ:",
+        "btn_services": "💻 አገልግሎቶች",
+        "btn_products": "🛒 ምርቶች",
+        "btn_request": "📋 አገልግሎት ለመጠየቅ",
+        "btn_quote": "💰 ዋጋ ለመጠየቅ",
+        "btn_contact": "📞 ያግኙን",
+        "btn_location": "📍 አድራሻችን",
+        "btn_lang": "🌍 ቋንቋ ለመቀየር",
+        "services_list": "💻 **የምንሰጣቸው አገልግሎቶች:**\n\n1. 🖨 Computer & Printer Maintenance\n2. 🌐 Network & Wi-Fi Setup\n3. 📹 CCTV Camera Installation\n4. 🔐 VPN & Security Solutions\n5. 💻 Software & System Setup",
+        "products_list": "🛒 **የሚሸጡ ዕቃዎች:**\n\n• ኮምፒውተሮች (Laptops & Desktops)\n• ፕሪንተሮች እና ቶነሮች\n• የኔትወርክ እቃዎች\n• CCTV ካሜራዎች\n\nለበለጠ መረጃ ያግኙን!",
+        "contact_info": "📞 **Ararsa Technology Solutions**\n\n📱 ስልክ: 0912688641\n📧 ኢሜይል: ararsa1221@gmail.com\n📍 አድራሻ: ዶዶላ, ኢትዮጵያ",
+        "location_info": "📍 **አድራሻችን:**\nArarsa Technology Solutions\nዶዶላ (Dodola), ኢትዮጵያ።",
+        "req_start": "📋 **አገልግሎት ለመጠየቅ እባክዎን ፎርሙን ይሙሉ::**\n\nሙሉ ስምዎን ያስገቡ:",
+        "req_phone": "የስልክ ቁጥርዎን ያስገቡ (ምሳሌ: 0912345678):",
+        "req_service": "ምን ዓይነት አገልግሎት ይፈልጋሉ?",
+        "req_location": "አድራሻዎን (ያሉበትን ቦታ) ያስገቡ:",
+        "req_desc": "የሚፈልጉትን ወይም ያጋጠመውን ችግር በአጭሩ ያብራሩ:",
+        "req_photo": "የችግሩን ፎቶ ካለዎት ይላኩ (ከሌለ 'Skip' የሚለውን ይጫኑ):",
+        "req_complete": "✅ ጥያቄዎ በተሳካ ሁኔታ ተልኳል! በቅርብ ጊዜ እናገኝዎታለን።",
+        "skip": "Skip ➡️"
+    },
+    "EN": {
+        "welcome": "🚀 Welcome to Ararsa Technology Solutions!\nProviding fast & reliable professional IT solutions.",
+        "lang_select": "Please select your language:",
+        "main_menu": "🏠 **Main Menu**\nPlease select an option below:",
+        "btn_services": "💻 Services",
+        "btn_products": "🛒 Products",
+        "btn_request": "📋 Request Service",
+        "btn_quote": "💰 Get a Quote",
+        "btn_contact": "📞 Contact Us",
+        "btn_location": "📍 Our Location",
+        "btn_lang": "🌍 Change Language",
+        "services_list": "💻 **Our Professional Services:**\n\n1. 🖨 Computer & Printer Maintenance\n2. 🌐 Network & Wi-Fi Installation\n3. 📹 CCTV Security Systems\n4. 🔐 VPN & Cyber Security\n5. 💻 Software & System Setup",
+        "products_list": "🛒 **Products Available:**\n\n• Laptops & Desktops\n• Printers & Toners\n• Networking Hardware\n• CCTV Cameras & DVRS\n\nContact us for details & pricing!",
+        "contact_info": "📞 **Ararsa Technology Solutions**\n\n📱 Phone: 0912688641\n📧 Email: ararsa1221@gmail.com\n📍 Location: Dodola, Ethiopia",
+        "location_info": "📍 **Our Location:**\nArarsa Technology Solutions\nDodola, Oromia, Ethiopia.",
+        "req_start": "📋 **Service Request Form**\n\nPlease enter your Full Name:",
+        "req_phone": "Enter your Phone Number (e.g. 0912345678):",
+        "req_service": "Which service do you require?",
+        "req_location": "Enter your location / address:",
+        "req_desc": "Describe your issue or requirements:",
+        "req_photo": "Upload a photo of the issue if available (or tap 'Skip'):",
+        "req_complete": "✅ Your request has been sent successfully! We will contact you shortly.",
+        "skip": "Skip ➡️"
+    }
 }
 
-def main_menu():
-    b = InlineKeyboardBuilder()
-    b.button(text="💻 Services", callback_data="services")
-    b.button(text="📋 Request Service", callback_data="request")
-    b.button(text="💰 Get a Quote", callback_data="quote")
-    b.button(text="🛒 Products", callback_data="products")
-    b.button(text="📞 Contact Us", callback_data="contact")
-    b.button(text="🌍 Language", callback_data="language")
-    b.adjust(2)
-    return b.as_markup()
+def get_menu_keyboard(lang):
+    t = TEXTS[lang]
+    keyboard = [
+        [t["btn_services"], t["btn_products"]],
+        [t["btn_request"], t["btn_quote"]],
+        [t["btn_contact"], t["btn_location"]],
+        [t["btn_lang"]]
+    ]
+    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
-def back_menu():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🏠 Main Menu", callback_data="home")]
-    ])
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    keyboard = [["🇪🇹 Afaan Oromo", "🇪🇹 Amharic"], ["🇬🇧 English"]]
+    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+    await update.message.reply_text("Choose Language / Afaan Filadhaa / ቋንቋ ይምረጡ:", reply_markup=reply_markup)
+    return LANGUAGE
 
-def services_menu():
-    b = InlineKeyboardBuilder()
-    for key, (title, _) in SERVICES.items():
-        b.button(text=title, callback_data=f"service:{key}")
-    b.button(text="🏠 Main Menu", callback_data="home")
-    b.adjust(1)
-    return b.as_markup()
-
-async def notify_admin(text: str):
-    if ADMIN_ID:
-        try:
-            await bot.send_message(ADMIN_ID, text)
-        except Exception:
-            logger.exception("Could not notify admin")
-
-WELCOME = """
-<b>🚀 Welcome to Technology Solution!</b>
-
-Your trusted partner for professional IT and technology services.
-
-We provide:
-• Computer & printer maintenance
-• Network & Wi-Fi solutions
-• CCTV & security
-• Software and Windows installation
-• IT support
-• VPN and remote-access solutions
-
-Choose a service below to get started.
-"""
-
-@router.message(CommandStart())
-async def start(message: Message):
-    await message.answer(WELCOME, reply_markup=main_menu())
-
-@router.message(Command("help"))
-async def help_cmd(message: Message):
-    await message.answer(
-        "<b>Technology Solution Help</b>\n\n"
-        "Use the buttons to request a service, ask for a quotation, "
-        "view our services, or contact our team.",
-        reply_markup=main_menu()
-    )
-
-@router.callback_query(F.data == "home")
-async def home(call: CallbackQuery):
-    await call.answer()
-    await call.message.edit_text(WELCOME, reply_markup=main_menu())
-
-@router.callback_query(F.data == "services")
-async def services(call: CallbackQuery):
-    await call.answer()
-    await call.message.edit_text("<b>💻 Our Professional Services</b>\n\nSelect a service:", reply_markup=services_menu())
-
-@router.callback_query(F.data.startswith("service:"))
-async def service_detail(call: CallbackQuery):
-    await call.answer()
-    key = call.data.split(":", 1)[1]
-    title, description = SERVICES[key]
-    text = f"<b>{title}</b>\n\n{description}\n\n📋 Need this service? Tap <b>Request Service</b>."
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📋 Request This Service", callback_data=f"request:{key}")],
-        [InlineKeyboardButton(text="⬅️ Services", callback_data="services")],
-        [InlineKeyboardButton(text="🏠 Main Menu", callback_data="home")]
-    ])
-    await call.message.edit_text(text, reply_markup=kb)
-
-@router.callback_query(F.data == "products")
-async def products(call: CallbackQuery):
-    await call.answer()
-    await call.message.edit_text(
-        "<b>🛒 Technology Products</b>\n\n"
-        "We can help you source and configure:\n"
-        "• Computers & laptops\n"
-        "• Printers & consumables\n"
-        "• Routers & switches\n"
-        "• Wi-Fi equipment\n"
-        "• Network cables & accessories\n"
-        "• CCTV equipment\n\n"
-        "Send us what you need and we will prepare a quotation.",
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="💰 Request Quote", callback_data="quote")],
-            [InlineKeyboardButton(text="🏠 Main Menu", callback_data="home")]
-        ])
-    )
-
-@router.callback_query(F.data == "contact")
-async def contact(call: CallbackQuery):
-    await call.answer()
-    await call.message.edit_text(
-        "<b>📞 Contact Technology Solution</b>\n\n"
-        "📱 Phone: 0912688641\n"
-        "📧 Email: ararsa1221@gmail.com\n"
-        "📍 Location: Dodola, Ethiopia\n"
-        "🕒 Hours: Monday–Saturday\n\n"
-        "For urgent technical support, send a service request through this bot.",
-        reply_markup=back_menu()
-    )
-
-@router.callback_query(F.data == "language")
-async def language(call: CallbackQuery):
-    await call.answer()
-    await call.message.edit_text(
-        "<b>🌍 Language</b>\n\n"
-        "Choose your preferred language.\n\n"
-        "🇬🇧 English\n"
-        "🇪🇹 Afaan Oromo\n"
-        "🇪🇹 Amharic\n\n"
-        "Multilingual support can be expanded in the next version.",
-        reply_markup=back_menu()
-    )
-
-@router.callback_query(F.data == "request")
-async def request_general(call: CallbackQuery):
-    await call.answer()
-    await call.message.answer(
-        "<b>📋 Service Request</b>\n\n"
-        "Please send one message containing:\n"
-        "1. Your name\n"
-        "2. Phone number\n"
-        "3. Service you need\n"
-        "4. Your location\n"
-        "5. Short description of the problem\n\n"
-        "You can also attach a photo of the problem."
-    )
-
-@router.callback_query(F.data.startswith("request:"))
-async def request_specific(call: CallbackQuery):
-    await call.answer()
-    key = call.data.split(":", 1)[1]
-    title = SERVICES[key][0]
-    await call.message.answer(
-        f"<b>📋 Request: {title}</b>\n\n"
-        "Please reply with your name, phone number, location and a short description of what you need."
-    )
-
-@router.callback_query(F.data == "quote")
-async def quote(call: CallbackQuery):
-    await call.answer()
-    await call.message.answer(
-        "<b>💰 Get a Quote</b>\n\n"
-        "Send your requirement in one message. Include quantities, equipment/model if known, "
-        "installation location and your phone number.\n\n"
-        "Our team will review it and contact you."
-    )
-
-@router.message(F.text)
-async def customer_message(message: Message):
-    if message.text.startswith("/"):
-        return
-    user = message.from_user
-    customer = (
-        f"🔔 <b>New Customer Request</b>\n\n"
-        f"👤 Name: {user.full_name}\n"
-        f"🆔 Telegram ID: <code>{user.id}</code>\n"
-        f"🔗 Username: @{user.username if user.username else 'N/A'}\n"
-        f"🕒 Time: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}\n\n"
-        f"💬 Message:\n{message.text}"
-    )
-    await notify_admin(customer)
-    await message.answer(
-        "✅ <b>Request received!</b>\n\n"
-        "Thank you for contacting Technology Solution. "
-        "Our team will review your request and contact you soon.",
-        reply_markup=main_menu()
-    )
-
-@router.message()
-async def customer_nontext(message: Message):
-    user = message.from_user
-    await notify_admin(
-        f"🔔 <b>New Customer Attachment</b>\n\n"
-        f"👤 {user.full_name}\n"
-        f"🆔 <code>{user.id}</code>\n"
-        f"📎 Content type: {message.content_type}"
-    )
-    await message.answer(
-        "✅ We received your attachment. Please also send your name, phone number, location and a short description.",
-        reply_markup=main_menu()
-    )
-
-@app.get("/")
-async def root():
-    return {"status": "online", "service": "Technology Solution Telegram Bot"}
-
-@app.get("/health")
-async def health():
-    return {"status": "healthy"}
-
-@app.post(WEBHOOK_PATH)
-async def telegram_webhook(request: Request):
-    data = await request.json()
-    from aiogram.types import Update
-    update = Update.model_validate(data)
-    await dp.feed_update(bot, update)
-    return {"ok": True}
-
-@app.on_event("startup")
-async def startup():
-    if WEBHOOK_URL:
-        await bot.set_webhook(f"{WEBHOOK_URL}{WEBHOOK_PATH}")
-        logger.info("Webhook configured: %s%s", WEBHOOK_URL, WEBHOOK_PATH)
+async def set_language(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text
+    if "Oromo" in text:
+        lang = "OM"
+    elif "Amharic" in text:
+        lang = "AM"
     else:
-        logger.warning("WEBHOOK_URL is not set. Set it in Render.")
+        lang = "EN"
+    
+    context.user_data["lang"] = lang
+    t = TEXTS[lang]
+    await update.message.reply_text(t["welcome"])
+    await update.message.reply_text(t["main_menu"], reply_markup=get_menu_keyboard(lang), parse_mode="Markdown")
+    return MAIN_MENU
 
-@app.on_event("shutdown")
-async def shutdown():
-    await bot.delete_webhook()
-    await bot.session.close()
+async def handle_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text
+    lang = context.user_data.get("lang", "OM")
+    t = TEXTS[lang]
+
+    if text in [TEXTS["OM"]["btn_services"], TEXTS["AM"]["btn_services"], TEXTS["EN"]["btn_services"]]:
+        await update.message.reply_text(t["services_list"], parse_mode="Markdown")
+    elif text in [TEXTS["OM"]["btn_products"], TEXTS["AM"]["btn_products"], TEXTS["EN"]["btn_products"]]:
+        await update.message.reply_text(t["products_list"], parse_mode="Markdown")
+    elif text in [TEXTS["OM"]["btn_contact"], TEXTS["AM"]["btn_contact"], TEXTS["EN"]["btn_contact"]]:
+        await update.message.reply_text(t["contact_info"], parse_mode="Markdown")
+    elif text in [TEXTS["OM"]["btn_location"], TEXTS["AM"]["btn_location"], TEXTS["EN"]["btn_location"]]:
+        await update.message.reply_text(t["location_info"], parse_mode="Markdown")
+    elif text in [TEXTS["OM"]["btn_lang"], TEXTS["AM"]["btn_lang"], TEXTS["EN"]["btn_lang"]]:
+        return await start(update, context)
+    elif text in [TEXTS["OM"]["btn_request"], TEXTS["AM"]["btn_request"], TEXTS["EN"]["btn_request"], TEXTS["OM"]["btn_quote"], TEXTS["AM"]["btn_quote"], TEXTS["EN"]["btn_quote"]]:
+        await update.message.reply_text(t["req_start"], reply_markup=ReplyKeyboardRemove())
+        return REQ_NAME
+    return MAIN_MENU
+
+async def req_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["req_name"] = update.message.text
+    lang = context.user_data.get("lang", "OM")
+    await update.message.reply_text(TEXTS[lang]["req_phone"])
+    return REQ_PHONE
+
+async def req_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["req_phone"] = update.message.text
+    lang = context.user_data.get("lang", "OM")
+    await update.message.reply_text(TEXTS[lang]["req_service"])
+    return REQ_SERVICE
+
+async def req_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["req_service"] = update.message.text
+    lang = context.user_data.get("lang", "OM")
+    await update.message.reply_text(TEXTS[lang]["req_location"])
+    return REQ_LOCATION
+
+async def req_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["req_location"] = update.message.text
+    lang = context.user_data.get("lang", "OM")
+    await update.message.reply_text(TEXTS[lang]["req_desc"])
+    return REQ_DESC
+
+async def req_desc(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["req_desc"] = update.message.text
+    lang = context.user_data.get("lang", "OM")
+    kb = ReplyKeyboardMarkup([[TEXTS[lang]["skip"]]], resize_keyboard=True)
+    await update.message.reply_text(TEXTS[lang]["req_photo"], reply_markup=kb)
+    return REQ_PHOTO
+
+async def send_to_admin(update: Update, context: ContextTypes.DEFAULT_TYPE, photo_id=None):
+    lang = context.user_data.get("lang", "OM")
+    user = update.message.from_user
+    
+    summary = (
+        f"🚨 **NEW CUSTOMER REQUEST** 🚨\n\n"
+        f"👤 **Name:** {context.user_data.get('req_name')}\n"
+        f"📱 **Phone:** {context.user_data.get('req_phone')}\n"
+        f"🛠 **Service:** {context.user_data.get('req_service')}\n"
+        f"📍 **Location:** {context.user_data.get('req_location')}\n"
+        f"📝 **Description:** {context.user_data.get('req_desc')}\n"
+        f"👤 **Telegram User:** @{user.username if user.username else user.first_name} (ID: {user.id})"
+    )
+    
+    if ADMIN_ID != 0:
+        try:
+            if photo_id:
+                await context.bot.send_photo(chat_id=ADMIN_ID, photo=photo_id, caption=summary, parse_mode="Markdown")
+            else:
+                await context.bot.send_message(chat_id=ADMIN_ID, text=summary, parse_mode="Markdown")
+        except Exception as e:
+            logger.error(f"Failed to send to admin: {e}")
+
+    await update.message.reply_text(
+        TEXTS[lang]["req_complete"],
+        reply_markup=get_menu_keyboard(lang)
+    )
+    return MAIN_MENU
+
+async def req_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    photo_id = update.message.photo[-1].file_id if update.message.photo else None
+    return await send_to_admin(update, context, photo_id)
+
+async def req_skip_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    return await send_to_admin(update, context, None)
+
+def main():
+    if not TOKEN:
+        logger.error("BOT_TOKEN environment variable is missing!")
+        return
+
+    app = Application.builder().token(TOKEN).build()
+
+    conv_handler = ConversationLogic(
+        entry_points=[CommandHandler("start", start)],
+        states={
+            LANGUAGE: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_language)],
+            MAIN_MENU: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_menu)],
+            REQ_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, req_name)],
+            REQ_PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, req_phone)],
+            REQ_SERVICE: [MessageHandler(filters.TEXT & ~filters.COMMAND, req_service)],
+            REQ_LOCATION: [MessageHandler(filters.TEXT & ~filters.COMMAND, req_location)],
+            REQ_DESC: [MessageHandler(filters.TEXT & ~filters.COMMAND, req_desc)],
+            REQ_PHOTO: [
+                MessageHandler(filters.PHOTO, req_photo),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, req_skip_photo)
+            ],
+        },
+        fallbacks=[CommandHandler("start", start)]
+    )
+
+    app.add_handler(conv_handler)
+
+    if WEBHOOK_URL:
+        webhook_path = f"/{TOKEN}"
+        full_url = f"{WEBHOOK_URL.rstrip('/')}{webhook_path}"
+        port = int(os.environ.get("PORT", 10000))
+        
+        logger.info(f"Setting webhook to: {full_url}")
+        app.run_webhook(
+            listen="0.0.0.0",
+            port=port,
+            url_path=TOKEN,
+            webhook_url=full_url
+        )
+    else:
+        logger.info("Starting long polling...")
+        app.run_polling()
 
 if __name__ == "__main__":
-    import uvicorn
-    port = int(os.getenv("PORT", "10000"))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    main()
