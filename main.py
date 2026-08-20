@@ -20,18 +20,22 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Token Environment Variable irraa
-TOKEN = os.environ.get("BOT_TOKEN", "8677969421:AAFyY_cNRkx-3X3N5TxI7nilY342rh9DtHc")
+# Token Environment Variable irraa fudhata, yoo jiraachuu baate isa haaraa fayyadama
+TOKEN = os.environ.get("BOT_TOKEN", "8677969421:AAEPVkcW9BY-5xjRQdZeAK8ESRbgIF07XYQ")
 
 # ID Telegram keetii kan ergaan fayyadamaa itti forward ta'u
-ADMIN_CHAT_ID = int(os.environ.get("ADMIN_CHAT_ID", "123456789"))  # ID kee galchi
+ADMIN_CHAT_ID = int(os.environ.get("ADMIN_CHAT_ID", "123456789"))
 
-# Dummy Web Server (Render Port binding)
+# Dummy Web Server (Render Port Binding & Health Check)
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.end_headers()
         self.wfile.write(b"Bot is live!")
+
+    def do_HEAD(self):
+        self.send_response(200)
+        self.end_headers()
 
 def run_dummy_server():
     port = int(os.environ.get("PORT", 10000))
@@ -78,11 +82,9 @@ async def set_language(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 async def forward_to_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_lang = context.user_data.get('lang', 'lang_om')
     
-    # Message gara Admin (sitti) forward gochuu
     try:
         await update.message.forward(chat_id=ADMIN_CHAT_ID)
         
-        # Deebii fayyadamaaf deebisuu
         if user_lang == 'lang_om':
             response = "Ergaan keessan sirriitti dhiyaateera. Galatoomaa!"
         elif user_lang == 'lang_am':
@@ -99,7 +101,6 @@ def main() -> None:
     
     application = Application.builder().token(TOKEN).build()
 
-    # Handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CallbackQueryHandler(set_language, pattern='^lang_'))
     application.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, forward_to_admin))
